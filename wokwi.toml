@@ -1,0 +1,4 @@
+[wokwi]
+version = 1
+firmware = 'build/TEMPORIZADOR_DISPARO.uf2'
+elf = 'build/TEMPORIZADOR_DISPARO.elf'

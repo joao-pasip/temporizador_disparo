@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
+#include "hardware/timer.h"
 
 // Definição dos GPIOs
 #define LED_BLUE 11
@@ -19,6 +20,7 @@ typedef enum
 } LedState;
 
 volatile LedState current_state = ALL_OFF;
+volatile bool button_enabled = true; // Controla se o botão pode ser pressionado
 
 // Função de debounce para o botão
 bool debounce_button()
@@ -35,43 +37,53 @@ bool debounce_button()
     return true;
 }
 
+// Função para mudar de estado após um tempo
+int64_t change_led_state(alarm_id_t id, void *user_data)
+{
+    // Garante que a sequência só ocorra se um LED estiver ligado
+    if (current_state == ALL_OFF)
+    {
+        return 0;
+    }
+
+    switch (current_state)
+    {
+    case ALL_ON:
+        gpio_put(LED_BLUE, 0);
+        current_state = BLUE_OFF;
+        add_alarm_in_ms(3000, change_led_state, NULL, false);
+        break;
+    case BLUE_OFF:
+        gpio_put(LED_RED, 0);
+        current_state = RED_OFF;
+        add_alarm_in_ms(3000, change_led_state, NULL, false);
+        break;
+    case RED_OFF:
+        gpio_put(LED_GREEN, 0);
+        current_state = GREEN_OFF;
+        button_enabled = true; // Habilita o botão novamente
+        break;
+    default:
+        break;
+    }
+    return 0; // O timer não se repete
+}
+
 // Callback do botão
 void button_callback(uint gpio, uint32_t events)
 {
-    if (gpio == BUTTON && debounce_button())
+    if (gpio == BUTTON && debounce_button() && button_enabled)
     {
-        switch (current_state)
-        {
-        case ALL_OFF:
-            // Liga todos os LEDs
-            gpio_put(LED_BLUE, 1);
-            gpio_put(LED_RED, 1);
-            gpio_put(LED_GREEN, 1);
-            current_state = ALL_ON;
-            break;
-        case ALL_ON:
-            // Desliga o LED azul
-            gpio_put(LED_BLUE, 0);
-            current_state = BLUE_OFF;
-            break;
-        case BLUE_OFF:
-            // Desliga o LED vermelho
-            gpio_put(LED_RED, 0);
-            current_state = RED_OFF;
-            break;
-        case RED_OFF:
-            // Desliga o LED verde
-            gpio_put(LED_GREEN, 0);
-            current_state = GREEN_OFF;
-            break;
-        case GREEN_OFF:
-            // Liga todos os LEDs e reinicia o ciclo
-            gpio_put(LED_BLUE, 1);
-            gpio_put(LED_RED, 1);
-            gpio_put(LED_GREEN, 1);
-            current_state = ALL_ON;
-            break;
-        }
+        button_enabled = false; // Desabilita o botão durante a sequência
+
+        // Liga todos os LEDs
+        gpio_put(LED_BLUE, 1);
+        gpio_put(LED_RED, 1);
+        gpio_put(LED_GREEN, 1);
+        current_state = ALL_ON;
+
+        // Inicia a sequência com um temporizador único
+        add_alarm_in_ms(3000, change_led_state, NULL, false);
     }
 }
 
@@ -103,7 +115,6 @@ int main()
     // Loop principal
     while (1)
     {
-        printf("Estado atual: %d\n", current_state);
-        sleep_ms(1000);
+        tight_loop_contents(); // Mantém o loop principal ocupado
     }
 }
